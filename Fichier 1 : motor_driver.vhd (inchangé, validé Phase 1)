@@ -1,0 +1,91 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity motor_driver is
+    port (
+        clk        : in  STD_LOGIC;
+        reset_n    : in  STD_LOGIC;
+        duty_cycle : in  STD_LOGIC_VECTOR(7 downto 0);
+        direction  : in  STD_LOGIC;
+        pwm_out    : out STD_LOGIC;
+        in1_out    : out STD_LOGIC;
+        in2_out    : out STD_LOGIC
+    );
+end motor_driver;
+
+architecture rtl of motor_driver is
+    
+    constant CLOCK_FREQ       : integer := 27_000_000;
+    constant PWM_FREQ         : integer := 10_000;
+    constant PERIOD_TICKS     : integer := CLOCK_FREQ / PWM_FREQ;
+    constant PERIOD_WIDTH     : integer := 12;
+    constant DEAD_TIME_CYCLES : integer := 100;
+    
+    signal counter        : unsigned(PERIOD_WIDTH-1 downto 0);
+    signal duty_threshold : integer range 0 to PERIOD_TICKS;
+    signal pwm_internal   : STD_LOGIC;
+    
+    signal direction_reg    : STD_LOGIC := '0';
+    signal direction_sync   : STD_LOGIC;
+    signal direction_prev   : STD_LOGIC;
+    signal dead_time_cnt    : unsigned(7 downto 0);
+    signal dead_time_active : STD_LOGIC;
+
+begin
+
+    duty_threshold <= (to_integer(unsigned(duty_cycle)) * PERIOD_TICKS) / 256;
+
+    process(clk, reset_n)
+    begin
+        if reset_n = '0' then
+            counter      <= (others => '0');
+            pwm_internal <= '0';
+        elsif rising_edge(clk) then
+            if counter >= to_unsigned(PERIOD_TICKS - 1, PERIOD_WIDTH) then
+                counter <= (others => '0');
+            else
+                counter <= counter + 1;
+            end if;
+
+            if to_integer(counter) < duty_threshold then
+                pwm_internal <= '1';
+            else
+                pwm_internal <= '0';
+            end if;
+        end if;
+    end process;
+
+    process(clk, reset_n)
+    begin
+        if reset_n = '0' then
+            direction_reg    <= '0';
+            direction_sync   <= '0';
+            direction_prev   <= '0';
+            dead_time_cnt    <= (others => '0');
+            dead_time_active <= '0';
+        elsif rising_edge(clk) then
+            direction_sync <= direction;
+            direction_prev <= direction_sync;
+
+            if dead_time_active = '0' then
+                if direction_sync /= direction_reg then
+                    dead_time_active <= '1';
+                    dead_time_cnt <= to_unsigned(DEAD_TIME_CYCLES, dead_time_cnt'length);
+                end if;
+            else
+                if dead_time_cnt = 0 then
+                    dead_time_active <= '0';
+                    direction_reg <= direction_sync;
+                else
+                    dead_time_cnt <= dead_time_cnt - 1;
+                end if;
+            end if;
+        end if;
+    end process;
+
+    pwm_out <= pwm_internal when (dead_time_active = '0') else '0';
+    in1_out <= direction_reg;
+    in2_out <= not direction_reg;
+
+end rtl;
