@@ -1,0 +1,32 @@
+// Phase 2 — Contrôle manuel moteur ENA + IN1/IN2
+// Device: GW1NSR-4C
+
+// Horloge 27 MHz
+IO_LOC "clk" 45;
+IO_PORT "clk" IO_TYPE=LVCMOS18 PULL_MODE=UP BANK_VCCIO=1.8;
+
+// Reset asynchrone actif bas
+IO_LOC "reset_n" 13;
+IO_PORT "reset_n" IO_TYPE=LVCMOS18 PULL_MODE=UP BANK_VCCIO=1.8;
+
+// Bouton UP : +1 duty_cycle
+IO_LOC "btn_up" 14;
+IO_PORT "btn_up" IO_TYPE=LVCMOS18 PULL_MODE=UP BANK_VCCIO=1.8;
+
+// Bouton DOWN : -1 duty_cycle
+IO_LOC "btn_down" 15;
+IO_PORT "btn_down" IO_TYPE=LVCMOS18 PULL_MODE=UP BANK_VCCIO=1.8;
+
+// Bouton DIR : bascule direction
+IO_LOC "btn_dir" 30;
+IO_PORT "btn_dir" IO_TYPE=LVCMOS18 PULL_MODE=UP BANK_VCCIO=1.8;
+
+// Sorties vers L298N
+IO_LOC "pwm_out" 27;
+IO_PORT "pwm_out" IO_TYPE=LVCMOS18 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=1.8;
+
+IO_LOC "in1_out" 28;
+IO_PORT "in1_out" IO_TYPE=LVCMOS18 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=1.8;
+
+IO_LOC "in2_out" 29;
+IO_PORT "in2_out" IO_TYPE=LVCMOS18 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=1.8;
