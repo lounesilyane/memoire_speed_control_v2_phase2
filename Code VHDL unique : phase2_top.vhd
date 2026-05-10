@@ -2,42 +2,57 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
--- ============================================================
--- MODULE : motor_driver (Phase 1 validé, inchangé)
--- ============================================================
-entity motor_driver is
+entity phase2_top is
     port (
-        clk        : in  STD_LOGIC;
-        reset_n    : in  STD_LOGIC;
-        duty_cycle : in  STD_LOGIC_VECTOR(7 downto 0);
-        direction  : in  STD_LOGIC;
-        pwm_out    : out STD_LOGIC;
-        in1_out    : out STD_LOGIC;
-        in2_out    : out STD_LOGIC
+        clk       : in  STD_LOGIC;
+        reset_n   : in  STD_LOGIC;
+        btn_up    : in  STD_LOGIC;
+        btn_down  : in  STD_LOGIC;
+        btn_dir   : in  STD_LOGIC;
+        pwm_out   : out STD_LOGIC;
+        in1_out   : out STD_LOGIC;
+        in2_out   : out STD_LOGIC
     );
-end motor_driver;
+end phase2_top;
 
-architecture rtl of motor_driver is
-    
+architecture rtl of phase2_top is
+
     constant CLOCK_FREQ       : integer := 27_000_000;
     constant PWM_FREQ         : integer := 10_000;
     constant PERIOD_TICKS     : integer := CLOCK_FREQ / PWM_FREQ;
     constant PERIOD_WIDTH     : integer := 12;
     constant DEAD_TIME_CYCLES : integer := 100;
+    constant TICK_10MS_MAX    : integer := 270_000;
+    constant TICK_CNT_WIDTH   : integer := 19;
     
-    signal counter        : unsigned(PERIOD_WIDTH-1 downto 0);
-    signal duty_threshold : integer range 0 to PERIOD_TICKS;
-    signal pwm_internal   : STD_LOGIC;
-    
-    signal direction_reg    : STD_LOGIC := '0';
-    signal direction_sync   : STD_LOGIC;
-    signal direction_prev   : STD_LOGIC;
-    signal dead_time_cnt    : unsigned(7 downto 0);
-    signal dead_time_active : STD_LOGIC;
+    signal counter            : unsigned(PERIOD_WIDTH-1 downto 0);
+    signal duty_threshold     : integer range 0 to PERIOD_TICKS;
+    signal pwm_internal       : STD_LOGIC;
+    signal direction_reg      : STD_LOGIC := '0';
+    signal direction_sync     : STD_LOGIC;
+    signal direction_prev     : STD_LOGIC;
+    signal dead_time_cnt      : unsigned(7 downto 0);
+    signal dead_time_active   : STD_LOGIC;
+    signal duty_cycle         : unsigned(7 downto 0) := (others => '0');
+    signal direction          : STD_LOGIC := '0';
+    signal tick_counter       : unsigned(TICK_CNT_WIDTH-1 downto 0);
+    signal tick_pulse         : STD_LOGIC;
+    signal btn_up_meta        : STD_LOGIC_VECTOR(1 downto 0);
+    signal btn_down_meta      : STD_LOGIC_VECTOR(1 downto 0);
+    signal btn_dir_meta       : STD_LOGIC_VECTOR(1 downto 0);
+    signal btn_up_sample      : STD_LOGIC;
+    signal btn_down_sample    : STD_LOGIC;
+    signal btn_dir_sample     : STD_LOGIC;
+    signal btn_up_prev        : STD_LOGIC;
+    signal btn_down_prev      : STD_LOGIC;
+    signal btn_dir_prev       : STD_LOGIC;
+    signal btn_up_rise        : STD_LOGIC;
+    signal btn_down_rise      : STD_LOGIC;
+    signal btn_dir_rise       : STD_LOGIC;
 
 begin
 
-    duty_threshold <= (to_integer(unsigned(duty_cycle)) * PERIOD_TICKS) / 256;
+    duty_threshold <= (to_integer(duty_cycle) * PERIOD_TICKS) / 256;
 
     process(clk, reset_n)
     begin
@@ -50,7 +65,6 @@ begin
             else
                 counter <= counter + 1;
             end if;
-
             if to_integer(counter) < duty_threshold then
                 pwm_internal <= '1';
             else
@@ -70,7 +84,6 @@ begin
         elsif rising_edge(clk) then
             direction_sync <= direction;
             direction_prev <= direction_sync;
-
             if dead_time_active = '0' then
                 if direction_sync /= direction_reg then
                     dead_time_active <= '1';
@@ -91,82 +104,22 @@ begin
     in1_out <= direction_reg;
     in2_out <= not direction_reg;
 
-end rtl;
-
-
--- ============================================================
--- TOP LEVEL : phase2_top
--- Rôle      : Contrôle manuel duty_cycle + direction
--- ============================================================
-entity phase2_top is
-    port (
-        clk       : in  STD_LOGIC;     -- 27 MHz
-        reset_n   : in  STD_LOGIC;     -- Actif bas
-        btn_up    : in  STD_LOGIC;     -- +1 duty_cycle (pin 14)
-        btn_down  : in  STD_LOGIC;     -- -1 duty_cycle (pin 15)
-        btn_dir   : in  STD_LOGIC;     -- Bascule direction (pin 30)
-        pwm_out   : out STD_LOGIC;     -- ENA (pin 27)
-        in1_out   : out STD_LOGIC;     -- IN1 (pin 28)
-        in2_out   : out STD_LOGIC      -- IN2 (pin 29)
-    );
-end phase2_top;
-
-architecture structural of phase2_top is
-
-    -- Paramètre anti-rebond : période d'échantillonnage
-    constant TICK_10MS    : integer := 270_000;  -- 27 MHz * 10 ms
-    constant TICK_WIDTH   : integer := 19;       -- log2(270000) ≈ 18.04
-    
-    -- Signaux internes
-    signal duty_cycle     : unsigned(7 downto 0) := (others => '0');
-    signal direction      : STD_LOGIC := '0';
-    
-    -- Génération tick 10 ms
-    signal tick_cnt       : unsigned(TICK_WIDTH-1 downto 0);
-    signal tick_10ms      : STD_LOGIC;
-    
-    -- Synchronisation métastabilité (2 registres @ 27 MHz)
-    signal btn_up_meta    : STD_LOGIC_VECTOR(1 downto 0);
-    signal btn_down_meta  : STD_LOGIC_VECTOR(1 downto 0);
-    signal btn_dir_meta   : STD_LOGIC_VECTOR(1 downto 0);
-    
-    -- Échantillons boutons (valeur stable à 10 ms)
-    signal btn_up_sample  : STD_LOGIC;
-    signal btn_down_sample: STD_LOGIC;
-    signal btn_dir_sample : STD_LOGIC;
-    
-    -- Détection front montant
-    signal btn_up_prev    : STD_LOGIC;
-    signal btn_down_prev  : STD_LOGIC;
-    signal btn_dir_prev   : STD_LOGIC;
-    signal btn_up_rise    : STD_LOGIC;
-    signal btn_down_rise  : STD_LOGIC;
-    signal btn_dir_rise   : STD_LOGIC;
-
-begin
-
-    -- =========================================================
-    -- 1. Générateur d'impulsion toutes les 10 ms
-    -- =========================================================
     process(clk, reset_n)
     begin
         if reset_n = '0' then
-            tick_cnt  <= (others => '0');
-            tick_10ms <= '0';
+            tick_counter <= (others => '0');
+            tick_pulse   <= '0';
         elsif rising_edge(clk) then
-            tick_10ms <= '0';
-            if tick_cnt >= to_unsigned(TICK_10MS - 1, TICK_WIDTH) then
-                tick_cnt  <= (others => '0');
-                tick_10ms <= '1';
+            tick_pulse <= '0';
+            if tick_counter >= to_unsigned(TICK_10MS_MAX - 1, TICK_CNT_WIDTH) then
+                tick_counter <= (others => '0');
+                tick_pulse   <= '1';
             else
-                tick_cnt <= tick_cnt + 1;
+                tick_counter <= tick_counter + 1;
             end if;
         end if;
     end process;
 
-    -- =========================================================
-    -- 2. Synchronisation des entrées asynchrones (métastabilité)
-    -- =========================================================
     process(clk)
     begin
         if rising_edge(clk) then
@@ -176,9 +129,6 @@ begin
         end if;
     end process;
 
-    -- =========================================================
-    -- 3. Échantillonnage boutons sur front 10 ms (anti-rebond)
-    -- =========================================================
     process(clk, reset_n)
     begin
         if reset_n = '0' then
@@ -189,13 +139,10 @@ begin
             btn_down_prev   <= '0';
             btn_dir_prev    <= '0';
         elsif rising_edge(clk) then
-            if tick_10ms = '1' then
-                -- Échantillonnage des valeurs synchronisées
+            if tick_pulse = '1' then
                 btn_up_sample   <= btn_up_meta(1);
                 btn_down_sample <= btn_down_meta(1);
                 btn_dir_sample  <= btn_dir_meta(1);
-                
-                -- Mémorisation pour détection de front
                 btn_up_prev   <= btn_up_sample;
                 btn_down_prev <= btn_down_sample;
                 btn_dir_prev  <= btn_dir_sample;
@@ -203,22 +150,16 @@ begin
         end if;
     end process;
 
-    -- =========================================================
-    -- 4. Détection de front montant (1 appui = 1 incrément)
-    -- =========================================================
     btn_up_rise   <= '1' when (btn_up_prev   = '0' and btn_up_sample   = '1') else '0';
     btn_down_rise <= '1' when (btn_down_prev = '0' and btn_down_sample = '1') else '0';
     btn_dir_rise  <= '1' when (btn_dir_prev  = '0' and btn_dir_sample  = '1') else '0';
 
-    -- =========================================================
-    -- 5. Registre duty_cycle (saturé 0..255, pas de 1)
-    -- =========================================================
     process(clk, reset_n)
     begin
         if reset_n = '0' then
             duty_cycle <= (others => '0');
         elsif rising_edge(clk) then
-            if tick_10ms = '1' then
+            if tick_pulse = '1' then
                 if btn_up_rise = '1' and duty_cycle < 255 then
                     duty_cycle <= duty_cycle + 1;
                 elsif btn_down_rise = '1' and duty_cycle > 0 then
@@ -228,32 +169,15 @@ begin
         end if;
     end process;
 
-    -- =========================================================
-    -- 6. Registre direction
-    -- =========================================================
     process(clk, reset_n)
     begin
         if reset_n = '0' then
             direction <= '0';
         elsif rising_edge(clk) then
-            if tick_10ms = '1' and btn_dir_rise = '1' then
+            if tick_pulse = '1' and btn_dir_rise = '1' then
                 direction <= not direction;
             end if;
         end if;
     end process;
 
-    -- =========================================================
-    -- 7. Instance driver moteur (Phase 1 validé)
-    -- =========================================================
-    u_driver: entity work.motor_driver
-        port map (
-            clk        => clk,
-            reset_n    => reset_n,
-            duty_cycle => STD_LOGIC_VECTOR(duty_cycle),
-            direction  => direction,
-            pwm_out    => pwm_out,
-            in1_out    => in1_out,
-            in2_out    => in2_out
-        );
-
-end structural;
+end rtl;
