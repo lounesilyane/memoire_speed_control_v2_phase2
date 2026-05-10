@@ -47,7 +47,6 @@ architecture rtl of phase2_top is
     signal btn_up_rise        : STD_LOGIC;
     signal btn_down_rise      : STD_LOGIC;
     signal btn_dir_rise       : STD_LOGIC;
-    signal btn_dir_rise_prev  : STD_LOGIC;  -- Pour éviter double appui
 
 begin
 
@@ -72,9 +71,6 @@ begin
         end if;
     end process;
 
-    -- =========================================================
-    -- DEAD-TIME + DIRECTION : UN SEUL PROCESS
-    -- =========================================================
     process(clk, reset_n)
     begin
         if reset_n = '0' then
@@ -82,17 +78,11 @@ begin
             direction_target <= '0';
             dead_time_cnt    <= (others => '0');
             dead_time_active <= '0';
-            btn_dir_rise_prev <= '0';
         elsif rising_edge(clk) then
-            -- Mise à jour direction_target (mémorisation appui)
-            if tick_pulse = '1' then
-                btn_dir_rise_prev <= btn_dir_rise;
-                if btn_dir_rise = '1' and btn_dir_rise_prev = '0' then
-                    direction_target <= not direction_target;
-                end if;
+            if tick_pulse = '1' and btn_dir_rise = '1' then
+                direction_target <= not direction_target;
             end if;
             
-            -- Gestion dead-time
             if dead_time_active = '0' then
                 if direction_target /= direction_reg then
                     dead_time_active <= '1';
@@ -163,6 +153,7 @@ begin
         end if;
     end process;
 
+    -- COMBINATOIRE : visible immédiatement pendant tick_pulse
     btn_up_rise   <= '1' when (btn_up_prev   = '0' and btn_up_sample   = '1') else '0';
     btn_down_rise <= '1' when (btn_down_prev = '0' and btn_down_sample = '1') else '0';
     btn_dir_rise  <= '1' when (btn_dir_prev  = '0' and btn_dir_sample  = '1') else '0';
