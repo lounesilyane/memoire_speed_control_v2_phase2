@@ -28,13 +28,11 @@ architecture rtl of phase2_top is
     signal counter            : unsigned(PERIOD_WIDTH-1 downto 0);
     signal duty_threshold     : integer range 0 to PERIOD_TICKS;
     signal pwm_internal       : STD_LOGIC;
-    signal direction_reg      : STD_LOGIC := '0';
-    signal direction_sync     : STD_LOGIC;
-    signal direction_prev     : STD_LOGIC;
+    signal direction_reg      : STD_LOGIC;
+    signal direction_target   : STD_LOGIC;
     signal dead_time_cnt      : unsigned(7 downto 0);
     signal dead_time_active   : STD_LOGIC;
-    signal duty_cycle         : unsigned(7 downto 0) := (others => '0');
-    signal direction          : STD_LOGIC := '0';
+    signal duty_cycle         : unsigned(7 downto 0);
     signal tick_counter       : unsigned(TICK_CNT_WIDTH-1 downto 0);
     signal tick_pulse         : STD_LOGIC;
     signal btn_up_meta        : STD_LOGIC_VECTOR(1 downto 0);
@@ -49,6 +47,7 @@ architecture rtl of phase2_top is
     signal btn_up_rise        : STD_LOGIC;
     signal btn_down_rise      : STD_LOGIC;
     signal btn_dir_rise       : STD_LOGIC;
+    signal btn_dir_rise_prev  : STD_LOGIC;  -- Pour éviter double appui
 
 begin
 
@@ -73,26 +72,36 @@ begin
         end if;
     end process;
 
+    -- =========================================================
+    -- DEAD-TIME + DIRECTION : UN SEUL PROCESS
+    -- =========================================================
     process(clk, reset_n)
     begin
         if reset_n = '0' then
             direction_reg    <= '0';
-            direction_sync   <= '0';
-            direction_prev   <= '0';
+            direction_target <= '0';
             dead_time_cnt    <= (others => '0');
             dead_time_active <= '0';
+            btn_dir_rise_prev <= '0';
         elsif rising_edge(clk) then
-            direction_sync <= direction;
-            direction_prev <= direction_sync;
+            -- Mise à jour direction_target (mémorisation appui)
+            if tick_pulse = '1' then
+                btn_dir_rise_prev <= btn_dir_rise;
+                if btn_dir_rise = '1' and btn_dir_rise_prev = '0' then
+                    direction_target <= not direction_target;
+                end if;
+            end if;
+            
+            -- Gestion dead-time
             if dead_time_active = '0' then
-                if direction_sync /= direction_reg then
+                if direction_target /= direction_reg then
                     dead_time_active <= '1';
                     dead_time_cnt <= to_unsigned(DEAD_TIME_CYCLES, dead_time_cnt'length);
                 end if;
             else
                 if dead_time_cnt = 0 then
                     dead_time_active <= '0';
-                    direction_reg <= direction_sync;
+                    direction_reg <= direction_target;
                 else
                     dead_time_cnt <= dead_time_cnt - 1;
                 end if;
@@ -120,9 +129,13 @@ begin
         end if;
     end process;
 
-    process(clk)
+    process(clk, reset_n)
     begin
-        if rising_edge(clk) then
+        if reset_n = '0' then
+            btn_up_meta   <= (others => '0');
+            btn_down_meta <= (others => '0');
+            btn_dir_meta  <= (others => '0');
+        elsif rising_edge(clk) then
             btn_up_meta   <= btn_up_meta(0)   & btn_up;
             btn_down_meta <= btn_down_meta(0) & btn_down;
             btn_dir_meta  <= btn_dir_meta(0)  & btn_dir;
@@ -160,22 +173,13 @@ begin
             duty_cycle <= (others => '0');
         elsif rising_edge(clk) then
             if tick_pulse = '1' then
-                if btn_up_rise = '1' and duty_cycle < 255 then
-                    duty_cycle <= duty_cycle + 1;
-                elsif btn_down_rise = '1' and duty_cycle > 0 then
-                    duty_cycle <= duty_cycle - 1;
+                if btn_up_rise = '1' and duty_cycle <= 245 then
+                    duty_cycle <= duty_cycle + 10;
+                elsif btn_down_rise = '1' and duty_cycle >= 10 then
+                    duty_cycle <= duty_cycle - 10;
+                else
+                    duty_cycle <= duty_cycle;
                 end if;
-            end if;
-        end if;
-    end process;
-
-    process(clk, reset_n)
-    begin
-        if reset_n = '0' then
-            direction <= '0';
-        elsif rising_edge(clk) then
-            if tick_pulse = '1' and btn_dir_rise = '1' then
-                direction <= not direction;
             end if;
         end if;
     end process;
